@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -20,23 +21,37 @@ class AuthController extends Controller
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(
-     *             required={"name","email","password"},
-     *             @OA\Property(property="name", type="string"),
-     *             @OA\Property(property="email", type="string"),
-     *             @OA\Property(property="password", type="string", format="password")
+     *             required={"name", "email", "password"},
+     *             @OA\Property(property="name", type="string", example="masud"),
+     *             @OA\Property(property="email", type="string", format="email", example="masudcse@gmail.com"),
+     *             @OA\Property(property="password", type="string", format="password", example="12345678"),
+     *             @OA\Property(property="role", type="string", example="user")
      *         )
      *     ),
      *     @OA\Response(
-     *         response=201,
-     *         description="User registered successfully"
+     *         response=200,
+     *         description="Registration successful",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Registration Successful"),
+     *             @OA\Property(property="user", type="object",ref="#/components/schemas/User"),
+     *             @OA\Property(property="access_token", type="string", example="your-jwt-token-here"),
+     *             @OA\Property(property="token_type", type="string", example="bearer"),
+     *             @OA\Property(property="expire_in", type="integer", example=3600)
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error"
      *     )
      * )
      */
+
     public function register(Request $request){
         $validation = Validator::make($request->all(),[
-            'name' => 'required|max:255|string',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:8|'
+            'name'     => 'required|max:255|string',
+            'email'    => 'required|email|unique:users',
+            'password' => 'required|min:8|',
+            'role'     => 'required|in:admin,user'
         ]);
 
         if($validation->fails()){
@@ -44,16 +59,17 @@ class AuthController extends Controller
         }
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password)
+            'name'      => $request->name,
+            'email'     => $request->email,
+            'password'  => Hash::make($request->password),
+            'role'      => $request->role
         ]);
 
         $token = JWTAuth::fromUser($user);
 
         return response()->json([
             'message' => 'Registration Successful',
-            'user' => $user,
+            'user' => new UserResource($user),
             'access_token' => $token,
             'token_type' => 'bearer',
             'expire_in' => auth()->factory()->getTTL()*60
@@ -101,5 +117,29 @@ class AuthController extends Controller
     public function logout(){
         auth()->logout();
         return response()->json(['message'=>'Logout Successful'],200);
+    }
+    /**
+     * @OA\Get(
+     *     path="/api/users",
+     *     summary="Get paginated list of users",
+     *     tags={"Users"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful response",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="data", type="array", @OA\Items(ref="#/components/schemas/User")),
+     *             @OA\Property(property="links", type="object"),
+     *             @OA\Property(property="meta", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthenticated"
+     *     )
+     * )
+     */
+    public function users()  {
+        return UserResource::collection(User::paginate(2));
     }
 }
